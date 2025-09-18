@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'teleop = robobehaviors_fsm.teleop:main',
+            'wall_follower = robobehaviors_fsm.wall_follower:main',
         ],
     },
 )
