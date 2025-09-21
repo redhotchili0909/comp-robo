@@ -9,12 +9,13 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
         ("share/" + package_name, ["package.xml"]),
+        ("share/" + package_name + "/launch", ["launch/fsm_launch.py"]),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="jun",
     maintainer_email="cpark1@olin.edu",
-    description="TODO: Package description",
+    description="Behavior FSM with cmd_vel multiplexing.",
     license="Apache-2.0",
     tests_require=["pytest"],
     entry_points={
@@ -22,6 +23,7 @@ setup(
             "teleop = robobehaviors_fsm.teleop:main",
             "wall_follower = robobehaviors_fsm.wall_follower:main",
             "drive_square = robobehaviors_fsm.drive_square:main",
+            "fsm = robobehaviors_fsm.fsm_manager:main",
         ],
     },
 )
