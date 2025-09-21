@@ -23,6 +23,7 @@ setup(
             "teleop = robobehaviors_fsm.teleop:main",
             "wall_follower = robobehaviors_fsm.wall_follower:main",
             "drive_square = robobehaviors_fsm.drive_square:main",
+            "person_follower = robobehaviors_fsm.person_follower:main"
             "fsm = robobehaviors_fsm.fsm_manager:main",
         ],
     },
