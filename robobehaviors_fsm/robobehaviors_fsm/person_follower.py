@@ -2,16 +2,14 @@
 This node has the robot follow a person
 """
 
-import rclpy
-from rclpy.node import Node
-from threading import Thread, Lock
 from time import sleep
-from geometry_msgs.msg import Twist
-from sensor_msgs.msg import LaserScan
+from threading import Thread, Lock
 import math
 
-ANGULAR_VEL = 0.3
-FORWARD_VEL = 0.1
+import rclpy
+from rclpy.node import Node
+from geometry_msgs.msg import Twist
+from sensor_msgs.msg import LaserScan
 
 
 class PersonFollower(Node):
@@ -32,12 +30,14 @@ class PersonFollower(Node):
         # parameters
         self.vel_lock = Lock()
         self.angular_vel = 0.0
-        self.linear_vel = 0.0
+        self.distance = 0.0
         self.turn_angle = 0.0
 
         self.local_angular_vel = 0.0
-        self.local_linear_vel = 0.0
+        self.local_distance = 0.0
         self.local_turn_angle = 0.0
+
+        self.angle_time = math.pi
 
     def run_loop(self):
         """
@@ -47,12 +47,11 @@ class PersonFollower(Node):
         # Find the shortest distance
         # Turn to face that point
         # Drive a little forward
-        while 1:  # infinite loop for now
-
+        while True:  # infinite loop for now
             # prevent race conditions
             with self.vel_lock:
                 self.local_angular_vel = self.angular_vel
-                self.local_linear_vel = self.linear_vel
+                self.local_distance = self.distance
                 self.local_turn_angle = self.turn_angle
 
             self.turn_follow()
@@ -67,12 +66,22 @@ class PersonFollower(Node):
 
         Updates angle and distance of determined person point
         """
-        self.handle_scan(msg)
+        filtered_ranges = self.handle_scan(msg)
+        print(filtered_ranges)  # for testing
+
+        # calculate angle of closest point
+        # TO-DO: add on center of mass calculation later for more accurate reading
+        min_angle_idx = min(
+            filtered_ranges, key=filtered_ranges.get
+        )  # sort based on distance, return angle idx
+
+        angle = msg.angle_min + (min_angle_idx * msg.angle_increment)
+        min_distance = min(filtered_ranges.values())
 
         with self.vel_lock:
-            self.turn_angle = None
-            self.angular_vel = None  # TO-DO update in a bit
-            self.linear_vel = None
+            self.turn_angle = angle
+            self.angular_vel = angle / self.angle_time  # TO-DO update in a bit
+            self.distance = min_distance
 
     def handle_scan(self, scan: LaserScan):
         """
@@ -88,12 +97,19 @@ class PersonFollower(Node):
         range_idx_left = int(
             round((rad_90 - scan.angle_min) / scan.angle_increment)
         )  # get closest to it
-        scan.ranges(range_idx_left)  # need to check left of this index
+
         rad_neg_90 = 1.57
         range_idx_right = int(
             round((scan.angle_max - rad_neg_90) / scan.angle_increment)
         )  # get closest to it
-        scan.ranges(range_idx_right)  # need to check right of this index
+
+        # combine left side of range with right side of range, preserving indices
+        filtered_ranges = []
+        for i, r in enumerate(scan.ranges):
+            if i < range_idx_left or i >= range_idx_right:
+                filtered_ranges.append((i, r))
+
+        return dict(filtered_ranges)  # convert to dict for ease of use
 
     def turn_follow(self):
         """
@@ -101,15 +117,22 @@ class PersonFollower(Node):
         """
         angular_vel = self.local_angular_vel
         self.drive(linear=0.0, angular=angular_vel)
-        # sleep() for calculated time it takes to turn to that angle
+        sleep(self.angle_time)
+        self.drive(0.0, 0.0)
 
     def drive_forward(self):
         """
         Drive straight to determined person point
         """
-        linear_vel = self.local_linear_vel
-        self.drive(linear=linear_vel, angular=0.0)
-        # sleep() for calculated time it takes to reach like half of distance
+        distance = self.local_distance
+        forward_vel = 0.7
+        if distance <= 0:
+            return
+        duration = distance / forward_vel
+        # if not self._e_stop.is_set():
+        self.drive(linear=forward_vel, angular=0.0)
+        sleep(duration)
+        self.drive(0.0, 0.0)
 
     def drive(self, linear, angular):
         """
@@ -138,4 +161,4 @@ def main(args=None):
 
 
 if __name__ == "__main__":
-    main = ()
+    main()
