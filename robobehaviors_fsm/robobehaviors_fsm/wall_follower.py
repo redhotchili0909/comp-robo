@@ -4,18 +4,18 @@ Wall follower module.
 
 import math
 from typing import Optional
-
+from threading import Event
 import rclpy
 from rclpy.node import Node
 from rclpy.duration import Duration
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
+from std_msgs.msg import Bool, String
 
 try:
     from neato2_interfaces.msg import Bump  # type: ignore
 except ImportError:
-    Bump = None 
-
+    Bump = None
 
 class WallFollowerNode(Node):
     """
@@ -33,6 +33,11 @@ class WallFollowerNode(Node):
         )
         if Bump is not None:
             self.create_subscription(Bump, "/bump", self._on_bump_msg, 10)
+        
+        self._enabled = Event()
+        self._estop = Event()
+        self.create_subscription(String, "fsm/state", self._on_fsm_state, 10)
+        self.create_subscription(Bool, "estop", self._on_estop, 10)
 
         # Controller state
         self.angular_vel = 0.0
@@ -85,7 +90,34 @@ class WallFollowerNode(Node):
         self.recover_turn_speed = float(self.get_parameter("recover_turn_speed").value)
         self.recover_turn_duration_s = float(self.get_parameter("recover_turn_duration_s").value)
 
+    def _on_estop(self, msg: Bool):
+        if bool(msg.data):
+            self._estop.set()
+            self._publish_zero()
+        else:
+            self._estop.clear()
+
+    def _on_fsm_state(self, msg: String):
+        if msg.data == "WALL":
+            if not self._enabled.is_set():
+                self.get_logger().info("Activated by FSM (WALL)")
+            self._enabled.set()
+        else:
+            if self._enabled.is_set():
+                self.get_logger().info("Deactivated by FSM (leaving WALL)")
+            self._enabled.clear()
+            self._publish_zero()
+
+    def _publish_zero(self):
+        vel = Twist()
+        vel.linear.x = 0.0
+        vel.angular.z = 0.0
+        self.cmd_pub.publish(vel)
+
     def run_loop(self):
+        if (not self._enabled.is_set()) or self._estop.is_set():
+            self._publish_zero()
+            return
         vel = Twist()
         now = self.get_clock().now()
 
@@ -138,6 +170,8 @@ class WallFollowerNode(Node):
         return float(r)
 
     def process_scan(self, msg: LaserScan):
+        if (not self._enabled.is_set()) or self._estop.is_set():
+            return
         off = float(self.pair_offset_deg)
 
         # Left side (center ≈ +90° from forward)
@@ -196,7 +230,7 @@ class WallFollowerNode(Node):
 
     # Bump handling
     def _on_bump_msg(self, msg):
-        if self.mode != "FOLLOW":
+        if self.mode != "FOLLOW" or (not self._enabled.is_set()) or self._estop.is_set():
             return
         left = bool(getattr(msg, "left_front", 0)) or bool(getattr(msg, "left_side", 0))
         right = bool(getattr(msg, "right_front", 0)) or bool(getattr(msg, "right_side", 0))
@@ -208,7 +242,7 @@ class WallFollowerNode(Node):
         self.last_bump_side = side if side in ("left", "right", "both") else "both"
         self.mode = "BACKING"
         self.state_until = self.get_clock().now() + Duration(seconds=float(self.back_duration_s))
-        self.get_logger().info(f"Bump detected on {self.last_bump_side}; backing up.")
+        self.get_logger().debug(f"Bump detected on {self.last_bump_side}; backing up.")
 
 
 def main(args=None):
