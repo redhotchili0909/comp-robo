@@ -17,6 +17,14 @@ def generate_launch_description() -> LaunchDescription:
                 output="screen",
                 remappings=[("cmd_vel", "teleop/cmd_vel")],
             ),
+            # Person Follower -> person_follower/cmd_vel
+            Node(
+                package="robobehaviors_fsm",
+                executable="person_follower",
+                name="person_follower",
+                output="screen",
+                remappings=[("cmd_vel", "person_follower/cmd_vel")],
+            ),
             # Wall Follower -> wall_follower/cmd_vel
             Node(
                 package="robobehaviors_fsm",

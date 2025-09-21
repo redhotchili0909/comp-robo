@@ -49,15 +49,15 @@ class WallFollowerNode(Node):
         self.left_wall_mean = 100.0
         self.right_wall_mean = 100.0
 
-        self.pair_offset_deg = 25.0
-        self.k_parallel = 0.7
-        self.follow_side = "auto"    # "left", "right", or "auto"
-        self.max_angular_z = 0.7
-        self.linear_speed = 0.3
+        self.pair_offset_deg = 35.0
+        self.k_parallel = 0.8
+        self.follow_side = "right"    # "left", "right", or "auto"
+        self.max_angular_z = 1.0
+        self.linear_speed = 0.1
         self.search_linear_speed = 0.08
         self.wall_max_range = 1.0
 
-        self.back_speed = -0.3
+        self.back_speed = -0.2
         self.back_duration_s = 1.0
         self.recover_turn_speed = 0.6
         self.recover_turn_duration_s = 1.5
