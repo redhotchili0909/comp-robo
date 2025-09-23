@@ -1,0 +1,110 @@
+# CompRobo FA25: Robo Behaviors Warmup Project
+
+*Chang Jun Park*\
+*Ashley Yang*
+
+## Project Overview
+
+You’ll find four behavior nodes — `teleop`, `drive_square`, `wall_follower`, and `person_follower` — plus an `fsm` node that acts sort of like a mux for `/cmd_vel`. A launch file starts them all at once and wires up topic remappings so they don’t overlap each other.
+
+Each behavior publishes to its own private velocity topic. The FSM subscribes to all of those, picks exactly one based on the current mode, and republishes that one to the global `/cmd_vel`. The FSM also publishes the current mode on `fsm/state` so behaviors can be activated/deactivated according to the current state. We also ensured that switching modes always include a stop so hand‑offs are clean.
+
+
+## Teleop
+
+### Implementation
+
+`teleop.py` is a simple keyboard driver. When the FSM says the system is in **TELEOP**, the node flips an internal switch and listens for single key presses from the terminal. It uses raw TTY mode and `select()` so it can check for keys without blocking ROS callbacks. Keys map straight to a `geometry_msgs/Twist` which translates to velocity and turn:
+
+- **8** drives forward at +0.3 m/s; **2** drives backward at −0.3 m/s.
+- **4** spins left at +1.0 rad/s; **6** spins right at −1.0 rad/s.
+- **7**/**9** do a forward + turn (left/right). **1**/**3** do a reverse + turn.
+- **5** is an immediate stop.
+- **Ctrl‑C** publishes one last zero and exits cleanly.
+
+Teleop only publishes when keys change, so it leans on the FSM’s stop behavior (and the **5** key) to make sure the Neato doesn’t dwell on a key between repeats. The moment the FSM leaves **TELEOP**, the node publishes a zero and goes idle.
+
+### Challenges
+
+Launching the full stack with `ros2 launch` initially caused the teleop node to crash immediately with `termios.error: (25, 'Inappropriate ioctl for device')`. The original code unconditionally called `termios.tcgetattr(sys.stdin)`, assuming an interactive TTY. After Googling this issue, we discoverd that under the launch system, `stdin` is often a pipe, so those input/output calls failed and killed the process. We fixed this by guarding all terminal operations with `sys.stdin.isatty()`. If no TTY is present we log a warning, disable keyboard reading, and just spin callbacks so the node can still react to FSM state changes and publish a safe stop when deactivated. When run directly with `ros2 run` (a real terminal), full keyboard control works exactly as before. Therefore, for this mode specifcally, we had to launch the FSM then have a seperate terminal open to run the node.
+
+
+## Drive Square
+
+
+
+## Wall Follower
+
+### Implementation
+
+`wall_follower.py` keeps the Neato roughly parallel to the nearest side wall using just two lidar scans per side and proportional correction. It also has a tiny recovery state machine using the bump sensors on the Neato.
+
+When the FSM publishes **WALL**, the node starts processing `sensor_msgs/LaserScan` and running its control loop. It samples symmetric lidar bearings on each side: left at **+90°−offset and +90°+offset**, right at **−90°+offset and −90°−offset** , with the offset set at **35°**. If both readings on a side are valid, it computes front minus back to measure how crooked the Neato is. A value near zero means you’re parallel; a positive value means the nose is farther from the wall (turn toward it a bit); a negative value means the nose is closer (turn away a bit). That difference is scaled by a proportional gain (`k_parallel` = 0.8) to produce `angular.z`. Additionally, when a wall is available, the Neato drives forward at 0.1 m/s; otherwise, it creeps at 0.08 m/s until it finds one.
+
+```
+err_parallel = rf - rb
+az = -self.k_parallel * err_parallel
+```
+
+There’s a **"mini-FSM"** that helps the Neato recover after bumping into an obstacle using the bump sensors:
+- **FOLLOW** is the normal mode described above.
+- A bump to some obstacle switches to **BACKING**, which makes the Neato back away with a slight turn away from the hit side.
+- Then it transitions to **RECOVER_TURN**, turning away from the hit side, after which it returns to **FOLLOW** and searches for a good wall.
+
+### Challenges
+
+Tuning this mode mostly came down to picking good values for `k_parallel` and `pair_offset_deg`. We tested several proportional gains to smooth out corrections: if the gain was too high, the robot overshot; if it was too low, it responded sluggishly. The offset angle needed the same care: it sets where the two side rays land on the wall, so if it’s too small the readings get noisy and don’t capture tilt well, and if it’s too large the rays miss useful geometry (or catch doors/corners). After some trial and error, we settled on values that keep turns steady without overshoot and focus the scan on the wall area that actually matters.
+
+## Person Follower
+
+
+
+## FSM Manager
+
+`fsm_manager.py` is the manager for all the states. It republishes exactly one behavior’s velocity stream to `/cmd_vel` and tells everyone the current mode on `fsm/state`.
+
+- Modes are normalized to: `IDLE`, `TELEOP`, `WALL`, `SQUARE`, `PERSON`, `ESTOP`.
+- It subscribes to `teleop/cmd_vel`, `wall_follower/cmd_vel`, `drive_square/cmd_vel`, and `person_follower/cmd_vel`.
+- It listens on `behavior_mode` (`std_msgs/String`) for mode requests.
+- Switching away from any active behavior stops the Neato first, then flips mode, then republishes `fsm/state`. Entering `IDLE` or `ESTOP` always publishes a zero.
+- You can also change modes via the `mode` parameter; the node validates it and routes it through the same logic.
+
+Because each behavior also listens to `fsm/state`, they only act when selected. Everything else can run in the background without stepping on `/cmd_vel`.
+
+
+## Launching & switching modes
+
+The launch file starts all behaviors plus the FSM and sets up remaps so only the FSM owns `/cmd_vel`.
+
+```bash
+ros2 launch robobehaviors_fsm fsm_launch.py
+```
+
+You can flip modes either by publishing to `behavior_mode`:
+
+```bash
+# Teleop
+ros2 topic pub /behavior_mode std_msgs/String "data: teleop"
+
+# Square
+ros2 topic pub /behavior_mode std_msgs/String "data: square"
+
+# Wall follower
+ros2 topic pub /behavior_mode std_msgs/String "data: wall"
+
+# Idle / Estop
+ros2 topic pub /behavior_mode std_msgs/String "data: idle"
+ros2 topic pub /behavior_mode std_msgs/String "data: estop"
+```
+
+…or by setting the `mode` parameter (which is the option we prefer!):
+
+```bash
+ros2 param set /behavior_fsm mode teleop
+```
+
+You can watch the current mode on:
+
+```bash
+ros2 topic echo /fsm/state
+```

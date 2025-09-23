@@ -18,19 +18,16 @@ class Teleop(Node):
     def __init__(self):
         super().__init__('teleop')
         self._enabled = Event()
+        self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
+        self._exit_requested = False
 
-        # Keyboard terminal settings
+        # Track terminal settings only if input is a TTY
         self.settings = None
         if sys.stdin.isatty():
             try:
                 self.settings = termios.tcgetattr(sys.stdin)
-            except OSError as e:
-                self.get_logger().warning(f"Failed to init terminal (keyboard mode): {e}.")
-        else:
-            self.get_logger().warn("Keyboard mode requires a seperate window running the node.")
-
-        self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
-        self._exit_requested = False
+            except termios.error as e:
+                self.get_logger().warn(f"Could not read TTY settings: {e}.")
 
         # FSM state subscription
         self.create_subscription(String, 'fsm/state', self._on_fsm_state, 10)
@@ -102,17 +99,11 @@ class Teleop(Node):
             twist.angular.z = 0.0
             self.publisher_.publish(twist)
 
-    def _restore_terminal_settings(self):
-        if self.settings is not None:
-            try:
-                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.settings)
-            except OSError:
-                pass
-
     def run_keyboard_mode(self):
         """Run the node in keyboard mode, processing ROS callbacks in between key reads."""
-        if self.settings is None:
-            self.get_logger().warn("Cannot run keyboard mode yet: Run the node manually to use this mode.")
+        if not sys.stdin.isatty() or self.settings is None:
+            self.get_logger().warn("No TTY detected. Keyboard input disabled; spinning callbacks only.")
+            rclpy.spin(self)
             return
         try:
             tty.setraw(sys.stdin.fileno())
@@ -124,10 +115,7 @@ class Teleop(Node):
                     self._process_key(key)
         except KeyboardInterrupt:
             self._exit_requested = True
-        finally:
             self._stop_robot()
-            self._restore_terminal_settings()
-
 
 def main(args=None):
     """Initialize our node, run it, and clean up on shut down."""
@@ -145,4 +133,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-

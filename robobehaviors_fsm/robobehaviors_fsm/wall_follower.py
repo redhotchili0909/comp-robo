@@ -8,10 +8,11 @@ from threading import Event
 import rclpy
 from rclpy.node import Node
 from rclpy.duration import Duration
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, Point
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
 from neato2_interfaces.msg import Bump
+from visualization_msgs.msg import Marker
 
 
 class WallFollowerNode(Node):
@@ -32,6 +33,8 @@ class WallFollowerNode(Node):
         
         self._enabled = Event()
         self.create_subscription(String, "fsm/state", self._on_fsm_state, 10)
+
+        self.wall_marker_pub = self.create_publisher(Marker, "wall_marker", 10)
 
         # Controller state
         self.angular_vel = 0.0
@@ -64,6 +67,11 @@ class WallFollowerNode(Node):
             self._enabled.clear()
             self._stop_robot()
 
+            # Clear wall markers
+            marker = Marker()
+            marker.action = Marker.DELETEALL
+            self.wall_marker_pub.publish(marker)
+
     def _stop_robot(self):
         vel = Twist()
         vel.linear.x = 0.0
@@ -81,7 +89,13 @@ class WallFollowerNode(Node):
             if self.state_until and now < self.state_until:
                 vel.linear.x = self.back_speed
                 turn = self.recover_turn_speed * 0.5
-                vel.angular.z = (-turn if self.last_bump_side == "left" else turn) if self.last_bump_side != "both" else 0.0
+
+                if self.last_bump_side == "both":
+                    vel.angular.z = 0.0
+                elif self.last_bump_side == "left":
+                    vel.angular.z = -turn
+                else:
+                    vel.angular.z = turn
             else:
                 # transition to recover turn
                 self.mode = "RECOVER_TURN"
@@ -91,9 +105,16 @@ class WallFollowerNode(Node):
         elif self.mode == "RECOVER_TURN":
             if self.state_until and now < self.state_until:
                 vel.linear.x = 0.0
-                vel.angular.z = (-self.recover_turn_speed if self.last_bump_side == "left" else self.recover_turn_speed) if self.last_bump_side != "both" else self.recover_turn_speed
+                # Choose turn direction based on last bump side
+                if self.last_bump_side == "both":
+                    #  Default turn left when both were hit
+                    vel.angular.z = self.recover_turn_speed
+                elif self.last_bump_side == "left":
+                    vel.angular.z = -self.recover_turn_speed
+                elif self.last_bump_side == "right" :
+                    vel.angular.z = self.recover_turn_speed
             else:
-                # back to follow mode
+                # transition to follow mode
                 self.mode = "FOLLOW"
                 self.wall_available = False
                 vel.linear.x = self.search_linear_speed
@@ -116,10 +137,27 @@ class WallFollowerNode(Node):
         """
         rad = math.radians(deg)
         idx = int(round((rad - scan.angle_min) / scan.angle_increment))
+        if idx < 0 or idx >= len(scan.ranges):
+            return float("nan")
         r = scan.ranges[idx]
-        if r == 0.0  or math.isnan(r):
+        if r == 0.0 or math.isnan(r) or math.isinf(r):
             return float("nan")
         return float(r)
+
+    def _publish_wall_marker(self, scan: LaserScan, p1: Point, p2: Point, color):
+        marker = Marker()
+        marker.header = scan.header
+        marker.ns = "wall"
+        marker.id = 0
+        marker.type = Marker.LINE_STRIP
+        marker.action = Marker.ADD
+        marker.scale.x = 0.03
+        marker.color.r = float(color[0])
+        marker.color.g = float(color[1])
+        marker.color.b = float(color[2])
+        marker.color.a = float(color[3])
+        marker.points = [p1, p2]
+        self.wall_marker_pub.publish(marker)
 
     def process_scan(self, msg: LaserScan):
         if not self._enabled.is_set():
@@ -172,6 +210,27 @@ class WallFollowerNode(Node):
         self.angular_vel = az
         self.wall_available = True
 
+        if side == "left":
+            a1 = math.radians(90.0 - off)
+            a2 = math.radians(90.0 + off)
+            r1, r2 = lf, lb
+            color = (0.0, 1.0, 0.0, 1.0)
+        else:
+            a1 = math.radians(-90.0 + off)
+            a2 = math.radians(-90.0 - off)
+            r1, r2 = rf, rb
+            color = (0.0, 0.5, 1.0, 1.0)
+
+        p1 = Point()
+        p1.x = float(r1 * math.cos(a1))
+        p1.y = float(r1 * math.sin(a1))
+        p1.z = 0.0
+        p2 = Point()
+        p2.x = float(r2 * math.cos(a2))
+        p2.y = float(r2 * math.sin(a2))
+        p2.z = 0.0
+        self._publish_wall_marker(msg, p1, p2, color)
+
     # Bump handling
     def _on_bump_msg(self, msg):
         if self.mode != "FOLLOW" or not self._enabled.is_set():
@@ -179,7 +238,12 @@ class WallFollowerNode(Node):
         left = bool(getattr(msg, "left_front", 0)) or bool(getattr(msg, "left_side", 0))
         right = bool(getattr(msg, "right_front", 0)) or bool(getattr(msg, "right_side", 0))
         if left or right:
-            side = "left" if left and not right else ("right" if right and not left else "both")
+            if left and not right:
+                side = "left"
+            elif right and not left:
+                side = "right"
+            else:
+                side = "both"
             self._trigger_bump(side)
 
     def _trigger_bump(self, side: str):
