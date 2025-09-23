@@ -8,7 +8,7 @@ import math
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
-from std_msgs.msg import Bool, String
+from std_msgs.msg import String
 
 class DrawSquare(Node):
     """
@@ -17,32 +17,13 @@ class DrawSquare(Node):
 
     def __init__(self):
         super().__init__("draw_square")
-        self._e_stop = Event()
         self._enabled = Event()
 
         self.vel_pub = self.create_publisher(Twist, "cmd_vel", 10)
-        self.create_subscription(Bool, "estop", self.handle_estop, 10)
         self.create_subscription(String, "fsm/state", self._on_fsm_state, 10)
 
-        # create thread to handle long-running drive component
         self.run_loop_thread = Thread(target=self.run_loop, daemon=True)
         self.run_loop_thread.start()
-
-    def handle_estop(self, msg):
-        """
-        Handles messages received on estop topic
-
-        Args:
-            msg (std_msgs.msg.Bool): message that is True if estop and False otherwise
-        """
-        if msg.data:
-            self._e_stop.set()
-            self.drive(linear=0.0, angular=0.0)
-            self.get_logger().warn("E-STOP engaged; stopping and pausing square loop.")
-        else:
-            if self._e_stop.is_set():
-                self.get_logger().info("E-STOP cleared; resuming square loop.")
-            self._e_stop.clear()
 
     def _on_fsm_state(self, msg: String):
         if msg.data == "SQUARE":
@@ -53,7 +34,6 @@ class DrawSquare(Node):
             if self._enabled.is_set():
                 self.get_logger().info("Deactivated by FSM (leaving SQUARE)")
             self._enabled.clear()
-            # ensure stop when not active
             self.drive(0.0, 0.0)
 
     def run_loop(self):
@@ -64,7 +44,7 @@ class DrawSquare(Node):
         side_m = 0.5
         dwell_s = 0.25
         while rclpy.ok():
-            while rclpy.ok() and (not self._enabled.is_set() or self._e_stop.is_set()):
+            while rclpy.ok() and not self._enabled.is_set():
                 self.drive(0.0, 0.0)
                 sleep(0.05)
             if not rclpy.ok():
@@ -96,8 +76,7 @@ class DrawSquare(Node):
         Executes 90 degree left turn (interruptible)
         """
         angular_vel = 0.5
-        if not self._e_stop.is_set():
-            self.drive(linear=0.0, angular=angular_vel)
+        self.drive(linear=0.0, angular=angular_vel)
         sleep(math.pi / angular_vel / 2)
         self.drive(linear=0.0, angular=0.0)
 
@@ -112,8 +91,7 @@ class DrawSquare(Node):
         if distance <= 0:
             return
         duration = distance / forward_vel
-        if not self._e_stop.is_set():
-            self.drive(linear=forward_vel, angular=0.0)
+        self.drive(linear=forward_vel, angular=0.0)
         sleep(duration)
         self.drive(0.0, 0.0)
 
