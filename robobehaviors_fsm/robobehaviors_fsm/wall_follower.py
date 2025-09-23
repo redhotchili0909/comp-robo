@@ -36,7 +36,7 @@ class WallFollowerNode(Node):
 
         self.wall_marker_pub = self.create_publisher(Marker, "wall_marker", 10)
 
-        # Controller state
+        # controller state
         self.angular_vel = 0.0
         self.wall_available = False
         self.mode = "FOLLOW"  # FOLLOW | BACKING | RECOVER_TURN
@@ -67,25 +67,30 @@ class WallFollowerNode(Node):
             self._enabled.clear()
             self._stop_robot()
 
-            # Clear wall markers
+            # clear wall markers
             marker = Marker()
             marker.action = Marker.DELETEALL
             self.wall_marker_pub.publish(marker)
 
     def _stop_robot(self):
+        # immediately stop the robot
         vel = Twist()
         vel.linear.x = 0.0
         vel.angular.z = 0.0
         self.cmd_pub.publish(vel)
 
     def run_loop(self):
+        # main control loop, runs at fixed interval
+
         if not self._enabled.is_set():
             self._stop_robot()
             return
+        
         vel = Twist()
         now = self.get_clock().now()
 
         if self.mode == "BACKING":
+            # still backing?
             if self.state_until and now < self.state_until:
                 vel.linear.x = self.back_speed
                 turn = self.recover_turn_speed * 0.5
@@ -103,11 +108,12 @@ class WallFollowerNode(Node):
                 vel.linear.x = 0.0
                 vel.angular.z = 0.0
         elif self.mode == "RECOVER_TURN":
+            # still turning?
             if self.state_until and now < self.state_until:
                 vel.linear.x = 0.0
-                # Choose turn direction based on last bump side
+                # choose turn direction based on last bump side
                 if self.last_bump_side == "both":
-                    #  Default turn left when both were hit
+                    #  default turn left when both were hit
                     vel.angular.z = self.recover_turn_speed
                 elif self.last_bump_side == "left":
                     vel.angular.z = -self.recover_turn_speed
@@ -145,6 +151,7 @@ class WallFollowerNode(Node):
         return float(r)
 
     def _publish_wall_marker(self, scan: LaserScan, p1: Point, p2: Point, color):
+        # helper to publish a wall marker for visualization
         marker = Marker()
         marker.header = scan.header
         marker.ns = "wall"
@@ -160,27 +167,28 @@ class WallFollowerNode(Node):
         self.wall_marker_pub.publish(marker)
 
     def process_scan(self, msg: LaserScan):
+        # process incoming LIDAR scan to update wall-following control
         if not self._enabled.is_set():
             return
         off = float(self.pair_offset_deg)
 
-        # Left side (center ≈ +90° from forward)
+        # left side (center ≈ +90° from forward)
         lf = self.range_at_deg(msg, 90.0 - off)  # front-left
         lb = self.range_at_deg(msg, 90.0 + off)  # back-left
 
-        # Right side (center ≈ -90° from forward)
+        # right side (center ≈ -90° from forward)
         rf = self.range_at_deg(msg, -90.0 + off)  # front-right
         rb = self.range_at_deg(msg, -90.0 - off)  # back-right
 
-        # If escaping, skip control updates
+        # if escaping, skip control updates
         if self.mode != "FOLLOW":
             return
 
-        # Check for NaN values
+        # check for NaN values
         left_pair_ok = not (math.isnan(lf) or math.isnan(lb))
         right_pair_ok = not (math.isnan(rf) or math.isnan(rb))
 
-        # Decide which side to use
+        # decide which side to use
         side = None
         pref = self.follow_side
         if pref == "left" and left_pair_ok:
@@ -198,7 +206,7 @@ class WallFollowerNode(Node):
             self.angular_vel = 0.0
             return
 
-        # Compute angular correction
+        # compute angular correction
         if side == "left":
             err_parallel = lf - lb
             az = self.k_parallel * err_parallel
@@ -209,6 +217,8 @@ class WallFollowerNode(Node):
         az = float(max(-self.max_angular_z, min(self.max_angular_z, az)))
         self.angular_vel = az
         self.wall_available = True
+
+        # publish wall marker for visualization
 
         if side == "left":
             a1 = math.radians(90.0 - off)
@@ -231,12 +241,12 @@ class WallFollowerNode(Node):
         p2.z = 0.0
         self._publish_wall_marker(msg, p1, p2, color)
 
-    # Bump handling
+    # bump handling
     def _on_bump_msg(self, msg):
         if self.mode != "FOLLOW" or not self._enabled.is_set():
             return
-        left = bool(getattr(msg, "left_front", 0)) or bool(getattr(msg, "left_side", 0))
-        right = bool(getattr(msg, "right_front", 0)) or bool(getattr(msg, "right_side", 0))
+        left = bool(getattr(msg, "left_front")) or bool(getattr(msg, "left_side"))
+        right = bool(getattr(msg, "right_front")) or bool(getattr(msg, "right_side"))
         if left or right:
             if left and not right:
                 side = "left"

@@ -16,28 +16,28 @@ class BehaviorFSM(Node):
     def __init__(self):
         super().__init__('behavior_fsm')
 
-        # Output publishers
+        # output publishers
         self.cmd_pub = self.create_publisher(Twist, 'cmd_vel', 10)
         self.state_pub = self.create_publisher(String, 'fsm/state', 10)
 
-        # Internal state
+        # internal state
         self.mode: str = 'IDLE'  # IDLE|TELEOP|WALL|SQUARE|PERSON|ESTOP
 
-        # Behavior input subscriptions
+        # behavior input subscriptions
         self.create_subscription(Twist, 'teleop/cmd_vel', self._on_teleop_cmd, 10)
         self.create_subscription(Twist, 'wall_follower/cmd_vel', self._on_wall_cmd, 10)
         self.create_subscription(Twist, 'drive_square/cmd_vel', self._on_square_cmd, 10)
         self.create_subscription(Twist, 'person_follower/cmd_vel', self._on_person_cmd, 10)
 
-        # Control inputs
+        # control inputs
         self.create_subscription(String, 'behavior_mode', self._on_mode_cmd, 10)
 
-        # Parameters for control
+        # parameters for control
         self.declare_parameter('mode', 'idle')  # idle|teleop|wall|square|person|estop
 
         self.add_on_set_parameters_callback(self._on_set_parameters)
 
-        # Debug state
+        # debug state
         self._last_command = {k: 0.0 for k in ('TELEOP', 'WALL', 'SQUARE', 'PERSON')}
         self._publish_state()
         self.get_logger().info('Behavior FSM started in IDLE. Set /behavior_mode to select a behavior.')
@@ -57,11 +57,13 @@ class BehaviorFSM(Node):
         }
         return mapping.get(t)
 
-    # Input callbacks for behavior Twist topics
+    # input callbacks for behavior Twist topics
     def _forward(self, src: str, msg: Twist):
         if self.mode != src:
             return
         self.cmd_pub.publish(msg)
+    
+    # forward to cmd_vel only if in the correct mode
 
     def _on_teleop_cmd(self, msg: Twist):
         self._forward('TELEOP', msg)
@@ -75,7 +77,7 @@ class BehaviorFSM(Node):
     def _on_person_cmd(self, msg: Twist):
         self._forward('PERSON', msg)
 
-    # Control inputs
+    # control inputs
     def _on_mode_cmd(self, msg: String):
         requested = self._parse_mode(msg.data)
         if requested is None:
@@ -129,7 +131,7 @@ class BehaviorFSM(Node):
             if p.name == 'mode':
                 desired_mode_param = p
         
-        # Validate mode value if provided
+        # validate mode value if provided
         if desired_mode_param is not None:
             mode = self._parse_mode(str(desired_mode_param.value))
             

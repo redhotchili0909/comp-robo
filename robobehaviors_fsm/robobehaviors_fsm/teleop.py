@@ -21,7 +21,7 @@ class Teleop(Node):
         self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
         self._exit_requested = False
 
-        # Track terminal settings only if input is a TTY
+        # track terminal settings only if input is a TTY
         self.settings = None
         if sys.stdin.isatty():
             try:
@@ -106,6 +106,7 @@ class Teleop(Node):
             rclpy.spin(self)
             return
         try:
+            # set terminal to raw mode
             tty.setraw(sys.stdin.fileno())
             while rclpy.ok() and not self._exit_requested:
                 rclpy.spin_once(self, timeout_sec=0.0)
