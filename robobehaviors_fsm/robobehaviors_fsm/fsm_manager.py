@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
 """
 Finite State Manager that multiplexes behavior velocity topics to /cmd_vel.
-
-- Inputs:
-  - /behavior_mode (std_msgs/String): one of [idle, teleop, wall, square, person]
-  - Behavior Twist topics: /teleop/cmd_vel, /wall_follower/cmd_vel, /drive_square/cmd_vel, /person_follower/cmd_vel
-- Outputs:
-  - /cmd_vel (geometry_msgs/Twist): selected behavior's commands (or zero when idle/estop)
-  - /fsm/state (std_msgs/String): current FSM state
-
 Behavior nodes can run continuously; only the selected topic is forwarded.
 """
 
