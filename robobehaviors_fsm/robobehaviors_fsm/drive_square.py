@@ -1,6 +1,7 @@
 """
 This node drives the robot in a square, while implementing an emergency stop topic.
 """
+
 from threading import Thread, Event
 from time import sleep
 import math
@@ -10,13 +11,14 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String
 
-class DrawSquare(Node):
+
+class DriveSquare(Node):
     """
     A class that implements a node to pilot a robot in a square.
     """
 
     def __init__(self):
-        super().__init__("draw_square")
+        super().__init__("drive_square")
         self._enabled = Event()
 
         self.vel_pub = self.create_publisher(Twist, "cmd_vel", 10)
@@ -101,7 +103,7 @@ def main(args=None):
     Overall main sequence
     """
     rclpy.init(args=args)
-    node = DrawSquare()
+    node = DriveSquare()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

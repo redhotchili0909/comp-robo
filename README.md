@@ -39,6 +39,8 @@ The node, subscribed to fsm/state, listens for when the message coming from the 
 
 ### Challenges
 
+While the implementation of this behavior was largely smooth, there was an initial challenge of thinking through the thread-based implementation of the node. In particular, there was some work done in understanding how an Event can impact the main running loop thread.
+
 ## Wall Follower
 
 ### Implementation
@@ -63,7 +65,19 @@ Tuning this mode mostly came down to picking good values for `k_parallel` and `p
 
 ## Person Follower
 
+### Implementation 
 
+`person_follower.py` implements a node to have the Neato follow a "person" within a certain range around. A thread-based approach is used to continuously process LIDAR scans from the Neato, calculate the closest point within a determined range of the Neato, and move the Neato close to that point. 
+
+The node is subscribed to the /scan topic, and uses incoming messages to get our angles and distances from the LIDAR readings. We chose 75 degrees to -75 degrees clockwise as our set of scan angles to consider, as it corresponds to the front of the Neato. Within that range of angles, the minimum distance of the scans is found and that point is picked as the target "person". The Neato turns to the specified angle, and then moves straight to the point, stopping right before collision. This repeats to have the Neato track and follow the "person".
+
+### Challenges
+
+Ensuring a consistent behavior result for this mode came down to making multiple modifications to the LIDAR scanning processing, in order to ensure that they were filtered correctly to our desired range. Since we want a precise area to consider where a person is, the LIDAR scans need to be both filtered based on predetermined angles as well as the distances received from the scanning. 
+
+Conceptualizing what the filtered range of angles really captured was a challenge, since the actual angles that the array of distances corresponds to is based on the indices, with a built-in starting angle and ending angle for the scans. Initially, the starting angle of the scan was assumed to be at 0, right at the heading of the Neato, which created unintended behavior with the Neato seemingly being inconsistent with what object it would follow, or not following when there was clearly as object in front. While the functionality of the person following movement didn't change, the constraints we had in mind weren't being followed.
+
+Printing out the angle_min and angle_max of the /scan topic turned out to be the simple conceptual solution to this, as it clarified that the start of the scan was -180, ending at 180, which corresponds to the back of the Neato. 
 
 ## FSM Manager
 
