@@ -7,6 +7,8 @@
 
 You’ll find four behavior nodes — `teleop`, `drive_square`, `wall_follower`, and `person_follower` — plus an `fsm` node that acts sort of like a mux for `/cmd_vel`. A launch file starts them all at once and wires up topic remappings so they don’t overlap each other.
 
+![FSM Diagram](assets/fsm_manager.png)
+
 Each behavior publishes to its own private velocity topic. The FSM subscribes to all of those, picks exactly one based on the current mode, and republishes that one to the global `/cmd_vel`. The FSM also publishes the current mode on `fsm/state` so behaviors can be activated/deactivated according to the current state. We also ensured that switching modes always include a stop so hand‑offs are clean.
 
 
@@ -15,6 +17,8 @@ Each behavior publishes to its own private velocity topic. The FSM subscribes to
 ### Implementation
 
 `teleop.py` is a simple keyboard driver. When the FSM says the system is in **TELEOP**, the node flips an internal switch and listens for single key presses from the terminal. It uses raw TTY mode and `select()` so it can check for keys without blocking ROS callbacks. Keys map straight to a `geometry_msgs/Twist` which translates to velocity and turn:
+
+![Teleop Diagram](assets/teleop.png)
 
 - **8** drives forward at +0.3 m/s; **2** drives backward at −0.3 m/s.
 - **4** spins left at +1.0 rad/s; **6** spins right at −1.0 rad/s.
@@ -46,6 +50,8 @@ While the implementation of this behavior was largely smooth, there was an initi
 ### Implementation
 
 `wall_follower.py` keeps the Neato roughly parallel to the nearest side wall using just two lidar scans per side and proportional correction. It also has a tiny recovery state machine using the bump sensors on the Neato.
+
+![Wall Follower Diagram](assets/wall_follow.png)
 
 When the FSM publishes **WALL**, the node starts processing `sensor_msgs/LaserScan` and running its control loop. It samples symmetric lidar bearings on each side: left at **+90°−offset and +90°+offset**, right at **−90°+offset and −90°−offset** , with the offset set at **35°**. If both readings on a side are valid, it computes front minus back to measure how crooked the Neato is. A value near zero means you’re parallel; a positive value means the nose is farther from the wall (turn toward it a bit); a negative value means the nose is closer (turn away a bit). That difference is scaled by a proportional gain (`k_parallel` = 0.8) to produce `angular.z`. Additionally, when a wall is available, the Neato drives forward at 0.1 m/s; otherwise, it creeps at 0.08 m/s until it finds one.
 
