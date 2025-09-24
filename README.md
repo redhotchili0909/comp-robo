@@ -31,7 +31,13 @@ Launching the full stack with `ros2 launch` initially caused the teleop node to 
 
 ## Drive Square
 
+### Implementation 
 
+`drive_square.py` implements a node to have the Neato continuously drive in the shape of a square for as long as the corresponding mode is set. It uses a thread-based approach to sequence the alternating steps of turning left and driving forward at fixed velocities and distances, activating from an Event coming from the FSM manager.
+
+The node, subscribed to fsm/state, listens for when the message coming from the topic publishes SQUARE to begin driving. On activation, the node executes its main driving logic of going straight forward a specified distance of 0.25 meters, then turning to make a 90 degree left turn, repeating these two steps continuously to draw squares. To go straight or turn, the linear or angular velocity of the Neato is set to preset values (0.7 m/s for linear, 0.5 m/s for angular), and the time for how long the Neato would take to drive the desired distance and angle is calculated; the process then sleeps for that duration so that the Neato drives at the specified velocities for the necessary amount of time before both velocities are set to 0 to stop.
+
+### Challenges
 
 ## Wall Follower
 
