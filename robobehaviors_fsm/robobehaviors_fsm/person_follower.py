@@ -45,7 +45,7 @@ class PersonFollower(Node):
         self.run_loop_thread = Thread(target=self.run_loop, daemon=True)
         self.run_loop_thread.start()
 
-        self.get_logger().info("person follower initialized")
+        self.get_logger().info("Person follower node initialized")
 
     def _on_fsm_state(self, msg: String):
         if msg.data == "PERSON":
@@ -106,7 +106,7 @@ class PersonFollower(Node):
             target_distance = 0.0  # basically there, don't move
 
         if target_distance > 0:
-            self.get_logger().info(f"driving forward {target_distance:.2f}")
+            self.get_logger().debug(f"driving forward {target_distance:.2f}")
             duration = target_distance / forward_vel
             self.drive(linear=forward_vel, angular=0.0)
             sleep(duration)
@@ -145,7 +145,7 @@ class PersonFollower(Node):
             angle = angle - (2 * math.pi)  # get neg from angle - full circle
 
         if min_distance < 1.5:  # robot idles if not within distance
-            self.get_logger().info(
+            self.get_logger().debug(
                 f"found person {min_distance:.2f} m, {math.degrees(angle):.2f} deg away"
             )
             self.is_person = True  # enable driving
