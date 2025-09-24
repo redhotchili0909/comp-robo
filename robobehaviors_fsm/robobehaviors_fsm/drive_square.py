@@ -89,7 +89,7 @@ class DriveSquare(Node):
         Args:
             distance (_type_): the distance to drive forward (only positive values)
         """
-        forward_vel = 0.7
+        forward_vel = 0.2
         if distance <= 0:
             return
         duration = distance / forward_vel

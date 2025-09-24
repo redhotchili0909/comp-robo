@@ -25,8 +25,8 @@ class PersonFollower(Node):
         self.create_subscription(LaserScan, "scan", self.find_person, 10)
 
         # subscribe to FSM node
-        # self._enabled = Event()
-        # self.create_subscription(String, "fsm/state", self._on_fsm_state, 10)
+        self._enabled = Event()
+        self.create_subscription(String, "fsm/state", self._on_fsm_state, 10)
 
         # parameters
         self.vel_lock = Lock()
@@ -47,16 +47,16 @@ class PersonFollower(Node):
 
         self.get_logger().info("person follower initialized")
 
-    # def _on_fsm_state(self, msg: String):
-    #     if msg.data == "PERSON":
-    #         if not self._enabled.is_set():
-    #             self.get_logger().info("Activated by FSM (PERSON)")
-    #         self._enabled.set()
-    #     else:
-    #         if self._enabled.is_set():
-    #             self.get_logger().info("Deactivated by FSM (leaving PERSON)")
-    #         self._enabled.clear()
-    #         self.drive(0.0, 0.0)
+    def _on_fsm_state(self, msg: String):
+        if msg.data == "PERSON":
+            if not self._enabled.is_set():
+                self.get_logger().info("Activated by FSM (PERSON)")
+            self._enabled.set()
+        else:
+            if self._enabled.is_set():
+                self.get_logger().info("Deactivated by FSM (leaving PERSON)")
+            self._enabled.clear()
+            self.drive(0.0, 0.0)
 
     def run_loop(self):
         """
@@ -64,29 +64,19 @@ class PersonFollower(Node):
         """
         try:
             while rclpy.ok():
-                # if self._enabled.is_set():
-                #     if self.is_person:
-                #         # prevent race conditions
-                #         with self.vel_lock:
-                #             self.local_distance = self.distance
-                #             self.local_turn_angle = self.turn_angle
-                #         self.get_logger().debug("start drive sequence")
-                #         print("start drive sequence")
-                #         self.turn_follow()
-                #         self.drive_forward()
-                #     # don't need else is_person since drive should be 0.-
-                # else:
-                #         self.drive(linear=0.0, angular=0.0)
-                if self.is_person:
-                    # prevent race conditions
-                    with self.vel_lock:  # only update right before driving
-                        self.local_distance = self.distance
-                        self.local_turn_angle = self.turn_angle
-                    self.get_logger().info("start drive sequence")
-                    self.turn_follow()
-                    self.drive_forward()
-                    self.get_logger().info("end drive sequence")
-                # self.get_logger().info("ran loop")
+                if self._enabled.is_set():
+                    if self.is_person:
+                        # prevent race conditions
+                        with self.vel_lock:
+                            self.local_distance = self.distance
+                            self.local_turn_angle = self.turn_angle
+                        self.get_logger().debug("start drive sequence")
+                        self.turn_follow()
+                        self.drive_forward()
+                        self.get_logger().debug("end drive sequence")
+                    # don't need else is_person since drive should be 0.0
+                else:
+                    self.drive(linear=0.0, angular=0.0)
         except Exception as e:
             self.get_logger().error(f"run_loop crashed: {e}")
 
@@ -94,29 +84,33 @@ class PersonFollower(Node):
         """
         Turns to the shortest distance point
         """
-        self.get_logger().info(
-            f"should be turning {self.local_turn_angle:.2f} right now"
-        )
-        self.angular_vel = self.local_turn_angle / self.angle_time
-        self.drive(linear=0.0, angular=self.angular_vel)
-        sleep(self.angle_time)
+        self.get_logger().debug(f"should be turning {self.local_turn_angle:.2f} now")
+        if self.local_turn_angle != 0:  # if not 0, turn
+            self.angular_vel = self.local_turn_angle / self.angle_time
+            self.drive(linear=0.0, angular=self.angular_vel)
+            sleep(self.angle_time)
         self.drive(linear=0.0, angular=0.0)  # stop robot at end
-        self.get_logger().info(f"end turned {self.local_turn_angle:.2f}")
 
     def drive_forward(self):
         """
         Drive straight to determined person point
         """
-        distance = self.local_distance
-        self.get_logger().info(f"should be driving forward {distance:.2f} right now")
+        target_distance = self.local_distance
         forward_vel = 0.1
-        if distance <= 0:
-            return
-        duration = distance / forward_vel
-        self.drive(linear=forward_vel, angular=0.0)
-        sleep(duration * 0.75)  # have robot go most of the way
+
+        if target_distance > 0.60:  # further away
+            target_distance *= 0.5
+        elif target_distance > 0.30:
+            target_distance -= 0.3  # 0.25m is touching object, leave a little buffer
+        else:
+            target_distance = 0.0  # basically there, don't move
+
+        if target_distance > 0:
+            self.get_logger().info(f"driving forward {target_distance:.2f}")
+            duration = target_distance / forward_vel
+            self.drive(linear=forward_vel, angular=0.0)
+            sleep(duration)
         self.drive(linear=0.0, angular=0.0)  # stop robot at end
-        self.get_logger().info(f"end drove {distance:.2f}")
 
     def drive(self, linear, angular):
         """
@@ -150,7 +144,7 @@ class PersonFollower(Node):
         if angle > (math.pi / 2):
             angle = angle - (2 * math.pi)  # get neg from angle - full circle
 
-        if min_distance < 1:  # ideally, if we don't update, will "idle"
+        if min_distance < 1.5:  # robot idles if not within distance
             self.get_logger().info(
                 f"found person {min_distance:.2f} m, {math.degrees(angle):.2f} deg away"
             )
