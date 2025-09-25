@@ -111,6 +111,8 @@ Tuning this mode mostly came down to picking good values for `k_parallel` and `p
 
 `person_follower.py` implements a node to have the Neato follow a "person" within a certain range around. A thread-based approach is used to continuously process LIDAR scans from the Neato, calculate the closest point within a determined range of the Neato, and move the Neato close to that point. 
 
+![Person Follower Diagram](assets/person_follow.png)
+
 The node is subscribed to the /scan topic, and uses incoming messages to get our angles and distances from the LIDAR readings. We chose 90 degrees to -0- degrees clockwise as our set of scan angles to consider, as it corresponds to the front of the Neato. Within that range of angles, the minimum distance of the scans is found and that point is picked as the target "person". The Neato turns to the specified angle, and then moves straight to the point, stopping right before collision. This repeats to have the Neato track and follow the "person".
 
 The Neato is designed to stop when the distance is below 0.25m; from quick simulation tests, 0.24 m or 0.25 m is how far away the Neato thinks it is from the object, even though it looks like it's actively hitting the object. This is just designed to remove unnecessary turning and movement when the Neato is essentially there already.
@@ -139,4 +141,6 @@ Because each behavior also listens to `fsm/state`, they only act when selected. 
 
 One key takeaway from this project was realizing just how many useful tools are available in the ROS2 environment for debugging and visualization. In particular, using Markers was extremely helpful for understanding what our robot perceived during operation. ROS2 parameters also played an essential role in `fsm_manager.py`, allowing us to switch between different modes easily during real-time operation. Additionally, setting up a launch file made running all the nodes together much more efficient. That said, we did encounter some challenges: while the some of the logic in our states initially seemed straightforward, in practice there were more obstacles to overcome than expected. For me, getting the timing between the state transitions in `wall_follower.py` correctly required significant debugging effort. Despite these challenges, I’m very satisfied with the outcome of our project.
 
-### Ashely
+### Ashley
+
+A key takeaway for this project was really realizing the importance of learning the particulars of the tools we're using with ROS2, such as the topics, nodes, and debug loggers. For example, though the concept of how the Neato would move in the person follower mode did not actually change from the beginning of the implementation efforts, there was a mismatch between the concept and what was happening when the package ran. For me, a pivotal moment was confirming how the /scan topic worked, which illuminated to me how my initial implementation and assumptions about the data didn't match the actual settings of the topic; having the confirmed knowledge of what the sensors and angle frames are doing early on likely would've saved a good amount of debugging time and effort. While I certainly learned some lessons in approaching development in ROS2, and predicting scope in efforts, I'm quite satisfied with how the project turned out.
