@@ -11,6 +11,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import String
+from visualization_msgs.msg import Marker
 
 
 class PersonFollower(Node):
@@ -27,6 +28,7 @@ class PersonFollower(Node):
         # subscribe to FSM node
         self._enabled = Event()
         self.create_subscription(String, "fsm/state", self._on_fsm_state, 10)
+        self.marker_pub = self.create_publisher(Marker, "person_marker", 10)
 
         # parameters
         self.vel_lock = Lock()
@@ -152,6 +154,7 @@ class PersonFollower(Node):
             with self.vel_lock:
                 self.turn_angle = angle
                 self.distance = min_distance
+            self.publish_marker(self.distance, self.turn_angle)
         else:
             self.is_person = False
 
@@ -172,6 +175,35 @@ class PersonFollower(Node):
                 filtered_ranges.append((i, r))
 
         return dict(filtered_ranges)  # convert to dict for ease of use
+    
+    def publish_marker(self, distance, angle):
+        """
+        Publish a sphere marker at the detected person's position
+        """
+        marker = Marker()
+        marker.header.frame_id = "base_link"  # robot's frame
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "person"
+        marker.id = 0
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+
+        # convert polar (distance, angle) -> Cartesian (x, y)
+        marker.pose.position.x = distance * math.cos(angle)
+        marker.pose.position.y = distance * math.sin(angle)
+        marker.pose.position.z = 0.0
+        marker.pose.orientation.w = 1.0
+
+        marker.scale.x = 0.1  # sphere diameter
+        marker.scale.y = 0.1
+        marker.scale.z = 0.1
+
+        marker.color.r = 1.0
+        marker.color.g = 0.0
+        marker.color.b = 0.0
+        marker.color.a = 1.0  # visible
+
+        self.marker_pub.publish(marker)
 
 
 def main(args=None):
