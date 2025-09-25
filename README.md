@@ -11,6 +11,42 @@ You’ll find four behavior nodes — `teleop`, `drive_square`, `wall_follower`,
 
 Each behavior publishes to its own private velocity topic. The FSM subscribes to all of those, picks exactly one based on the current mode, and republishes that one to the global `/cmd_vel`. The FSM also publishes the current mode on `fsm/state` so behaviors can be activated/deactivated according to the current state. We also ensured that switching modes always include a stop so hand‑offs are clean.
 
+## Launching & switching modes
+
+The launch file starts all behaviors plus the FSM and sets up remaps so only the FSM owns `/cmd_vel`.
+
+```bash
+ros2 launch robobehaviors_fsm fsm_launch.py
+```
+
+You can flip modes either by publishing to `behavior_mode`:
+
+```bash
+# Teleop
+ros2 topic pub /behavior_mode std_msgs/String "data: teleop"
+
+# Square
+ros2 topic pub /behavior_mode std_msgs/String "data: square"
+
+# Wall follower
+ros2 topic pub /behavior_mode std_msgs/String "data: wall"
+
+# Idle / Estop
+ros2 topic pub /behavior_mode std_msgs/String "data: idle"
+ros2 topic pub /behavior_mode std_msgs/String "data: estop"
+```
+
+…or by setting the `mode` parameter (which is the option we prefer!):
+
+```bash
+ros2 param set /behavior_fsm mode teleop
+```
+
+You can watch the current mode on:
+
+```bash
+ros2 topic echo /fsm/state
+```
 
 ## Teleop
 
@@ -97,40 +133,10 @@ Conceptualizing what the filtered range of angles really captured was a challeng
 
 Because each behavior also listens to `fsm/state`, they only act when selected. Everything else can run in the background without stepping on `/cmd_vel`.
 
+## Individudal Takeaways
 
-## Launching & switching modes
+### Jun
 
-The launch file starts all behaviors plus the FSM and sets up remaps so only the FSM owns `/cmd_vel`.
+One key takeaway from this project was realizing just how many useful tools are available in the ROS2 environment for debugging and visualization. In particular, using Markers was extremely helpful for understanding what our robot perceived during operation. ROS2 parameters also played an essential role in `fsm_manager.py`, allowing us to switch between different modes easily during real-time operation. Additionally, setting up a launch file made running all the nodes together much more efficient. That said, we did encounter some challenges: while the some of the logic in our states initially seemed straightforward, in practice there were more obstacles to overcome than expected. For me, getting the timing between the state transitions in `wall_follower.py` correctly required significant debugging effort. Despite these challenges, I’m very satisfied with the outcome of our project.
 
-```bash
-ros2 launch robobehaviors_fsm fsm_launch.py
-```
-
-You can flip modes either by publishing to `behavior_mode`:
-
-```bash
-# Teleop
-ros2 topic pub /behavior_mode std_msgs/String "data: teleop"
-
-# Square
-ros2 topic pub /behavior_mode std_msgs/String "data: square"
-
-# Wall follower
-ros2 topic pub /behavior_mode std_msgs/String "data: wall"
-
-# Idle / Estop
-ros2 topic pub /behavior_mode std_msgs/String "data: idle"
-ros2 topic pub /behavior_mode std_msgs/String "data: estop"
-```
-
-…or by setting the `mode` parameter (which is the option we prefer!):
-
-```bash
-ros2 param set /behavior_fsm mode teleop
-```
-
-You can watch the current mode on:
-
-```bash
-ros2 topic echo /fsm/state
-```
+### Ashely
