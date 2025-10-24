@@ -27,7 +27,7 @@ def segment_non_blue_balls(bgr: np.ndarray) -> np.ndarray:
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
 
     # --- Step 1: Estimate average felt color automatically ---
-    sample = hsv[::10, ::10, 0]  # sample every 10 pixels (for speed)
+    sample = hsv[::7, ::7, 0]  # sample every 10 pixels (for speed)
     hist = cv2.calcHist([sample.astype(np.uint8)], [0], None, [180], [0, 180])
     dominant_hue = int(np.argmax(hist))  # most frequent hue ≈ felt hue
 
@@ -41,12 +41,12 @@ def segment_non_blue_balls(bgr: np.ndarray) -> np.ndarray:
     non_blue = cv2.bitwise_not(blue_mask)
 
     # --- Step 4: Morphological cleanup ---
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-    non_blue = cv2.morphologyEx(non_blue, cv2.MORPH_OPEN, kernel, iterations=2)
-    non_blue = cv2.morphologyEx(non_blue, cv2.MORPH_CLOSE, kernel, iterations=3)
+# --- Step 4: Morphological cleanup ---
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)) # <-- Smaller kernel
+    # Just one iteration is often enough to remove noise without damaging the balls
+    non_blue = cv2.morphologyEx(non_blue, cv2.MORPH_OPEN, kernel, iterations=1) # <-- 1 iteration
+    non_blue = cv2.morphologyEx(non_blue, cv2.MORPH_CLOSE, kernel, iterations=2) # Close can stay
     non_blue = cv2.medianBlur(non_blue, 5)
-
-    return non_blue
 
     return non_blue
 
@@ -57,7 +57,7 @@ def find_ball_circles(mask: np.ndarray) -> list[tuple[int, int, int]]:
 
     # Estimate reasonable area range for balls (relative to image size)
     min_area = image_area * 0.001  # ~0.1% of image
-    max_area = image_area * 0.02   # ~2% of image
+    max_area = image_area * 0.09   # ~2% of image
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     circles = []
@@ -70,11 +70,11 @@ def find_ball_circles(mask: np.ndarray) -> list[tuple[int, int, int]]:
         circularity = 4 * np.pi * area / (perimeter * perimeter)
 
         # Real pool balls are very round — higher circularity threshold helps
-        if circularity < 0.75:
+        if circularity < 0.36:
             continue
 
         (x, y), r = cv2.minEnclosingCircle(cnt)
-        if r < 10 or r > 60:  # skip tiny or huge circles
+        if r < 5 or r > 80:  # skip tiny or huge circles
             continue
 
         circles.append((int(x), int(y), int(r)))
@@ -96,6 +96,7 @@ def detect_balls(image_path: str):
     img = load_image(image_path)
     img = preprocess_lighting(img)
     mask = segment_non_blue_balls(img)
+    cv2.imwrite("detected_balls_step1_mask.jpg",mask)
     circles = find_ball_circles(mask)
 
     # Draw circles
@@ -110,4 +111,4 @@ def detect_balls(image_path: str):
 
 if __name__ == "__main__":
     # Change path if needed
-    detect_balls("data/photos/pool_table_1.jpg")
+    detect_balls("data/photos/pool_table_16.jpg")
