@@ -23,32 +23,47 @@ def load_image(image_path: str) -> np.ndarray:
     return img
 
 def segment_non_blue_balls(bgr: np.ndarray) -> np.ndarray:
-    """Segment balls by removing the blue table background using adaptive thresholds."""
     hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
 
-    # --- Step 1: Estimate average felt color automatically ---
-    sample = hsv[::7, ::7, 0]  # sample every 10 pixels (for speed)
+    # --- Step 1: Estimate dominant felt hue ---
+    sample = hsv[::7, ::7, 0]
     hist = cv2.calcHist([sample.astype(np.uint8)], [0], None, [180], [0, 180])
-    dominant_hue = int(np.argmax(hist))  # most frequent hue ≈ felt hue
+    dominant_hue = int(np.argmax(hist))
 
-    # --- Step 2: Build hue range around that felt color ---
-    hue_margin = 15  # widen this if lighting is uneven
-    lower_blue = np.array([max(dominant_hue - hue_margin, 0), 30, 40])
-    upper_blue = np.array([min(dominant_hue + hue_margin, 179), 255, 255])
+    # --- Step 2: Mask felt (wider hue band) ---
+    hue_margin = 12
+    lower_felt = np.array([max(dominant_hue - hue_margin, 0), 40, 40])
+    upper_felt = np.array([min(dominant_hue + hue_margin, 179), 255, 255])
+    felt_mask = cv2.inRange(hsv, lower_felt, upper_felt)
 
-    # --- Step 3: Mask felt and invert to get balls ---
-    blue_mask = cv2.inRange(hsv, lower_blue, upper_blue)
-    non_blue = cv2.bitwise_not(blue_mask)
+    # --- Step 3: Dark ball recovery (black, dark blue) ---
+    v_channel = hsv[:, :, 2]
+    dark_mask = cv2.inRange(v_channel, 0, 65)
 
-    # --- Step 4: Morphological cleanup ---
-# --- Step 4: Morphological cleanup ---
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)) # <-- Smaller kernel
-    # Just one iteration is often enough to remove noise without damaging the balls
-    non_blue = cv2.morphologyEx(non_blue, cv2.MORPH_OPEN, kernel, iterations=1) # <-- 1 iteration
-    non_blue = cv2.morphologyEx(non_blue, cv2.MORPH_CLOSE, kernel, iterations=2) # Close can stay
-    non_blue = cv2.medianBlur(non_blue, 5)
+    # --- Step 4: White/bright highlights (striped regions, cue ball tops) ---
+    s_channel = hsv[:, :, 1]
+    bright_mask = cv2.inRange(s_channel, 0, 70)  # low saturation = white or pale color
+    bright_mask = cv2.bitwise_and(bright_mask, cv2.inRange(v_channel, 180, 255))
 
-    return non_blue
+    # --- Step 5: Combine non-felt colors, darks, and whites ---
+    non_felt_mask = cv2.bitwise_not(felt_mask)
+    combined = cv2.bitwise_or(non_felt_mask, dark_mask)
+    combined = cv2.bitwise_or(combined, bright_mask)
+
+    # --- Step 6: Morphological cleanup ---
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, kernel, iterations=1)
+    combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel, iterations=2)
+    combined = cv2.medianBlur(combined, 5)
+
+    cv2.imwrite("debug_felt_mask.jpg", felt_mask)
+    cv2.imwrite("debug_dark_mask.jpg", dark_mask)
+    cv2.imwrite("debug_bright_mask.jpg", bright_mask)
+    cv2.imwrite("debug_combined_mask.jpg", combined)
+
+
+    return combined
+
 
 def find_ball_circles(mask: np.ndarray) -> list[tuple[int, int, int]]:
     """Find circles (x, y, r) of likely pool balls using contours."""
@@ -70,11 +85,11 @@ def find_ball_circles(mask: np.ndarray) -> list[tuple[int, int, int]]:
         circularity = 4 * np.pi * area / (perimeter * perimeter)
 
         # Real pool balls are very round — higher circularity threshold helps
-        if circularity < 0.36:
+        if circularity < 0.26:
             continue
 
         (x, y), r = cv2.minEnclosingCircle(cnt)
-        if r < 5 or r > 80:  # skip tiny or huge circles
+        if r < 5 or r > 90:  # skip tiny or huge circles
             continue
 
         circles.append((int(x), int(y), int(r)))
@@ -98,6 +113,7 @@ def detect_balls(image_path: str):
     mask = segment_non_blue_balls(img)
     cv2.imwrite("detected_balls_step1_mask.jpg",mask)
     circles = find_ball_circles(mask)
+
 
     # Draw circles
     output = img.copy()
