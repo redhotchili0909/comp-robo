@@ -62,7 +62,7 @@ def segment_non_blue_balls(bgr: np.ndarray) -> np.ndarray:
     cv2.imwrite("debug_combined_mask.jpg", combined)
 
 
-    return combined
+    return combined, dominant_hue
 
 
 def find_ball_circles(mask: np.ndarray) -> list[tuple[int, int, int]]:
@@ -105,14 +105,75 @@ def preprocess_lighting(bgr: np.ndarray) -> np.ndarray:
     lab_eq = cv2.merge((l_eq, a, b))
     return cv2.cvtColor(lab_eq, cv2.COLOR_LAB2BGR)
 
+def recover_dark_balls_with_hough(img_bgr: np.ndarray, dominant_hue: int,
+                                  existing: list[tuple[int,int,int]]) -> list[tuple[int,int,int]]:
+    """
+    Find additional circles in dark regions (black / dark blue) using HoughCircles,
+    restricted to a dark ROI so we avoid table texture.
+    """
+    # HSV + GRAY
+    hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    h, s, v = cv2.split(hsv)
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+
+    # --- Dark ROI (very low V) but NOT table hue (to avoid shadows) ---
+    dark = cv2.inRange(v, 0, 80)
+    felt = cv2.inRange(hsv,
+                       (max(dominant_hue - 12, 0), 30, 40),
+                       (min(dominant_hue + 12, 179), 255, 255))
+    roi = cv2.bitwise_and(dark, cv2.bitwise_not(felt))
+
+    # Small clean up
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    roi = cv2.morphologyEx(roi, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+    # Zero-out grayscale outside ROI so Hough only looks where we want
+    g = gray.copy()
+    g[roi == 0] = 0
+    g = cv2.medianBlur(g, 5)
+
+    # Sensitive Hough pass for small dark balls
+    circles = cv2.HoughCircles(
+        g, cv2.HOUGH_GRADIENT,
+        dp=1.2, minDist=38,
+        param1=80, param2=14,     # lower param2 -> more sensitive
+        minRadius=12, maxRadius=40
+    )
+
+    extra = []
+    if circles is not None:
+        for (x, y, r) in np.uint16(np.around(circles))[0]:
+            # De-dup: skip if overlaps an existing circle
+            keep = True
+            for (x0, y0, r0) in existing:
+                if (x - x0)**2 + (y - y0)**2 < (0.6 * max(r, r0))**2:
+                    keep = False
+                    break
+            if keep:
+                extra.append((int(x), int(y), int(r)))
+
+    # Debug (optional)
+    dbg = cv2.cvtColor(g, cv2.COLOR_GRAY2BGR)
+    for (x, y, r) in extra:
+        cv2.circle(dbg, (x, y), r, (0, 255, 0), 2)
+        cv2.circle(dbg, (x, y), 2, (0, 0, 255), 3)
+    cv2.imwrite("debug_dark_roi.jpg", roi)
+    cv2.imwrite("debug_dark_hough.jpg", dbg)
+
+    return extra
+
 
 def detect_balls(image_path: str):
     """Main entry: detect and save annotated output."""
     img = load_image(image_path)
     img = preprocess_lighting(img)
-    mask = segment_non_blue_balls(img)
-    cv2.imwrite("detected_balls_step1_mask.jpg",mask)
+    mask, dominant_hue = segment_non_blue_balls(img)
+    cv2.imwrite("detected_balls_step1_mask.jpg", mask)
     circles = find_ball_circles(mask)
+
+    # --- Dark-ball recovery (black & dark blue) ---
+    extra = recover_dark_balls_with_hough(img, dominant_hue, circles)
+    circles.extend(extra)
 
 
     # Draw circles
