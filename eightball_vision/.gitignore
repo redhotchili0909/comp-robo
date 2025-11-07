@@ -1,4 +1,3 @@
 .venv
 .env
-output_images/
 cv2
