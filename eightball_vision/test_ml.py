@@ -60,12 +60,18 @@ for idx, image_path in enumerate(image_files, 1):
 
         annotated = sv.BoxAnnotator(thickness=2).annotate(scene=bgr_image.copy(), detections=detections)
         annotated = sv.LabelAnnotator(text_thickness=1, text_scale=0.5).annotate(scene=annotated, detections=detections)
+        balls_dir = out_dir / f"{image_path.stem}_balls"
+        balls_dir.mkdir(parents=True, exist_ok=True)
 
         for j, bbox in enumerate(detections.xyxy):
             x1, y1, x2, y2 = map(int, bbox)
             ball_roi = bgr_image[y1:y2, x1:x2]
+
             if ball_roi.size == 0:
                 continue
+
+            ball_path = balls_dir / f"ball_{j+1}.png"
+            cv2.imwrite(str(ball_path), ball_roi)
 
             ball_type = classify_ball_type(ball_roi)
             color = (0, 255, 0) if ball_type == "solid" else (255, 0, 255)
