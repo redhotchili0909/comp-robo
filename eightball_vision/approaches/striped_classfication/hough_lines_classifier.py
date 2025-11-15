@@ -1,6 +1,5 @@
 """
-Stripe vs Solid classifier: counts straight lines inside a circular mask
-using HoughLinesP; stripes tend to produce multiple short lines.
+Stripe vs Solid classifier: counts straight lines inside a circular mask using Hough Lines
 """
 
 import os
@@ -17,11 +16,10 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ml_detection = os.path.join(BASE_DIR, "circle_detection", "results", "ml_detection")
 INPUT_PATH = os.path.join(ml_detection, "pool_table_0_balls")
 
-# Canny + Hough parameters
 CANNY_LOW = 60
 CANNY_HIGH = 150
 HOUGH_THRESH = 10
-HOUGH_MIN_LINE_FRAC = 0.5  # as a fraction of radius
+HOUGH_MIN_LINE_FRAC = 0.4  # as a fraction of radius
 HOUGH_MAX_GAP = 5
 
 def classify_by_lines(canny_img, center, radius):
@@ -36,7 +34,7 @@ def classify_by_lines(canny_img, center, radius):
         minLineLength=int(radius * HOUGH_MIN_LINE_FRAC),
         maxLineGap=HOUGH_MAX_GAP,
     )
-    if lines is not None and len(lines) > 2:
+    if lines is not None:
         return "Striped", f"Lines:{len(lines)}", lines
     else:
         return "Solid", "Lines:0", lines
@@ -63,17 +61,11 @@ def save_overlay(bgr, center, radius, lines, label, dbg, subdir, base_name):
     return out_path
 
 
-def classify_path(path_in):
-    if os.path.isfile(path_in):
-        imgs = [path_in]
-        print(f"File: {path_in}\n")
-    else:
-        imgs = sorted(glob.glob(os.path.join(path_in, "*.png"))) + \
-               sorted(glob.glob(os.path.join(path_in, "*.jpg")))
-        print(f"Folder: {path_in}")
-        print(f"Found {len(imgs)} crops\n")
-        if not imgs:
-            return
+def main(path_in):
+
+    imgs = sorted(glob.glob(os.path.join(path_in, "*.png"))) + \
+            sorted(glob.glob(os.path.join(path_in, "*.jpg")))
+
     stripes = solids = 0
     for p in imgs:
         bgr = cv2.imread(p, cv2.IMREAD_COLOR)
@@ -90,13 +82,11 @@ def classify_path(path_in):
             stripes += 1
         elif label.startswith("Solid"):
             solids += 1
-        print(f"{os.path.basename(p)} -> {label} [{dbg}]")
 
         base = os.path.splitext(os.path.basename(p))[0]
         subdir = os.path.basename(os.path.dirname(p)) or "single"
         save_overlay(bgr, c, r, lines, label, dbg, subdir, base)
-    print(f"\nTotals: {stripes} stripes, {solids} solids")
 
 
 if __name__ == "__main__":
-    classify_path(INPUT_PATH)
+    main(INPUT_PATH)

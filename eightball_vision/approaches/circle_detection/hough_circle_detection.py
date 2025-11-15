@@ -5,7 +5,8 @@ import os
 import cv2
 import numpy as np
 
-OUTPUT_DIR = "results/hough_circle"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, "results", "hough_circle")
 
 def save_image(filename, image):
     """Save image to the output directory."""
@@ -74,8 +75,8 @@ def detect_with_hough_circles(gray, bgr):
     min_dist = 38
     param1 = 100
     param2 = 30
-    min_radius = 15
-    max_radius = 50
+    min_radius = 50
+    max_radius = 80
 
     circles = cv2.HoughCircles(
         gray,
@@ -130,5 +131,7 @@ def main(image_path):
 
 
 if __name__ == "__main__":
-    main("../../data/photos/pool_table_0.png")
-
+    default_image = os.path.normpath(
+        os.path.join(SCRIPT_DIR, "..", "..", "data", "photos", "pool_table_0.png")
+    )
+    main(default_image)

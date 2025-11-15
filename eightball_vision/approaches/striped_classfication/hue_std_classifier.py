@@ -1,7 +1,5 @@
 """
-Stripe vs Solid classifier: hue standard deviation inside a circle mask.
-
-Readable structure with small helpers and clear constants; saves an overlay per crop.
+Stripe vs Solid classifier: hue standard deviation inside a circle mask
 """
 
 import os
@@ -12,21 +10,20 @@ import numpy as np
 
 # output directory for annotated overlays
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "results", "contrast_boundary")
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, "results", "hue_std")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ml_detection = os.path.join(BASE_DIR, "circle_detection", "results", "ml_detection")
 INPUT_PATH = os.path.join(ml_detection, "pool_table_0_balls")
 
 # thresholds
+# value threshold for "very dark" pixels to find 8-ball -> lower means darker
 BLACK_V_MAX = 40
+# saturation and value thresholds for "white-like" pixels to find cue ball -> low s is little color, high v is brighter
 WHITE_S_MAX = 30
 WHITE_V_MIN = 180
-HUE_STD_STRIPED = 20.0
-
-
-def ensure_path(p):
-    return p if p and (os.path.isdir(p) or os.path.isfile(p)) else None
+# if hue standard deviation inside ROI exceeds this, treat as striped
+HUE_STD_STRIPED = 15.0
 
 
 def classify_by_hue_std(hsv_img, center, radius):
@@ -35,6 +32,8 @@ def classify_by_hue_std(hsv_img, center, radius):
     total = cv2.countNonZero(mask)
     if total == 0:
         return "Unknown", "N/A"
+    # extract HSV channels within the mask
+    # h = hue, s = saturation, v = value
     h = hsv_img[:, :, 0][mask == 255]
     s = hsv_img[:, :, 1][mask == 255]
     v = hsv_img[:, :, 2][mask == 255]
@@ -49,19 +48,6 @@ def classify_by_hue_std(hsv_img, center, radius):
     return ("Striped", dbg) if hue_std > HUE_STD_STRIPED else ("Solid", dbg)
 
 
-def _class_to_color(label):
-    # pick a tint per class for visualization (BGR)
-    if label.startswith("Solid (8-Ball)"):
-        return (0, 0, 255)   # red
-    if label.startswith("Solid (Cue)"):
-        return (255, 0, 0)   # blue
-    if label.startswith("Striped"):
-        return (0, 255, 255) # yellow
-    if label.startswith("Solid"):
-        return (0, 255, 0)   # green
-    return (200, 200, 200)
-
-
 def save_overlay(bgr, center, radius, label, dbg, subdir, base_name):
     out_dir = os.path.join(OUTPUT_DIR, subdir)
     if not os.path.exists(out_dir):
@@ -71,39 +57,27 @@ def save_overlay(bgr, center, radius, label, dbg, subdir, base_name):
     mask = np.zeros((h, w), dtype=np.uint8)
     cv2.circle(mask, center, radius, 255, -1)
 
-    color = _class_to_color(label)
-    tint = np.zeros_like(bgr)
-    tint[mask == 255] = color
-
-    alpha = np.zeros((h, w, 1), dtype=np.float32)
-    alpha[mask == 255] = 0.25
-    blended = (bgr.astype(np.float32) * (1.0 - alpha) + tint.astype(np.float32) * alpha)
-    blended = np.clip(blended, 0, 255).astype(np.uint8)
-
-    cv2.circle(blended, center, radius, (0, 255, 0), 2)
+    cv2.circle(bgr, center, radius, (0, 255, 0), 2)
     text = f"{label}  [{dbg}]"
-    cv2.putText(blended, text, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 2)
-    cv2.putText(blended, text, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
+    cv2.putText(bgr, text, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 2)
+    cv2.putText(bgr, text, (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1)
 
     out_path = os.path.join(out_dir, f"{base_name}_overlay.png")
-    cv2.imwrite(out_path, blended)
+    cv2.imwrite(out_path, bgr)
     return out_path
 
 
-def classify_path(path_in):
-    if os.path.isfile(path_in):
-        imgs = [path_in]
-        print(f"File: {path_in}\n")
-        subdir = os.path.basename(os.path.dirname(path_in)) or "single"
-    else:
-        imgs = sorted(glob.glob(os.path.join(path_in, "*.png"))) + \
-               sorted(glob.glob(os.path.join(path_in, "*.jpg")))
-        print(f"Folder: {path_in}")
-        print(f"Found {len(imgs)} crops\n")
-        if not imgs:
-            return
-        subdir = os.path.basename(os.path.normpath(path_in))
+def main(path_in):
+
+    imgs = sorted(glob.glob(os.path.join(path_in, "*.png"))) + \
+            sorted(glob.glob(os.path.join(path_in, "*.jpg")))
+
+    if not imgs:
+        return
+    
+    subdir = os.path.basename(os.path.normpath(path_in))
     stripes = solids = 0
+
     for p in imgs:
         bgr = cv2.imread(p, cv2.IMREAD_COLOR)
         if bgr is None:
@@ -117,12 +91,10 @@ def classify_path(path_in):
             stripes += 1
         elif label.startswith("Solid"):
             solids += 1
-        print(f"{os.path.basename(p)} -> {label} [{dbg}]")
 
         base = os.path.splitext(os.path.basename(p))[0]
         save_overlay(bgr, c, r, label, dbg, subdir, base)
-    print(f"\nTotals: {stripes} stripes, {solids} solids")
 
 
 if __name__ == "__main__":
-    classify_path(INPUT_PATH)
+    main(INPUT_PATH)
