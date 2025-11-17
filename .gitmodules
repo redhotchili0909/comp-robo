@@ -2,3 +2,6 @@
   path = robot_localization
   url = https://github.com/redhotchili0909/robot_localization.git
   branch = main
+[submodule "neato_fleet"]
+	path = neato_fleet
+	url = git@github.com:redhotchili0909/neato_fleet.git
